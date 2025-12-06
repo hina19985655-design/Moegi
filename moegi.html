@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moegi Matcha Order System</title>
+    <style>
+        /* --- 基本スタイリングは省略（以前と同じ） --- */
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 15px; background-color: #f4f4f9; }
+        .container { max-width: 600px; margin: auto; }
+        /* タイトルを変更 */
+        h1 { color: #333; text-align: center; } 
+        .menu-item { background-color: #fff; padding: 15px; margin-bottom: 10px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; }
+        .item-info { flex-grow: 1; }
+        .item-name { font-weight: bold; font-size: 1.1em; }
+        /* 価格のフォントを少し大きくし、目立たせます */
+        .item-price { color: #888; margin-top: 5px; font-size: 1em; } 
+        .add-button { background-color: #4cd964; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .add-button:active { background-color: #3aa34f; }
+        .order-summary { position: sticky; bottom: 0; background-color: #333; color: white; padding: 15px; border-radius: 10px 10px 0 0; display: flex; justify-content: space-between; align-items: center; margin: -15px -15px 0; }
+        .total-display { font-size: 1.8em; font-weight: bold; }
+        .clear-button { background-color: #ff3b30; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; }
+        .order-list { font-size: 0.9em; margin-bottom: 10px; max-height: 100px; overflow-y: auto; background-color: #444; padding: 5px; border-radius: 5px; }
+        
+        /* --- タブ切り替え専用スタイリング（変更なし） --- */
+        #tab-buttons {
+            display: flex;
+            justify-content: space-around; 
+            margin-bottom: 20px;
+            background-color: #fff;
+            padding: 5px 0;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            position: sticky; 
+            top: 0;
+            z-index: 10;
+        }
+        .tab-button {
+            flex-grow: 1;
+            padding: 12px 0;
+            text-align: center;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #888;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+        }
+        .tab-button.active {
+            color: #007aff; 
+            border-bottom: 3px solid #007aff; 
+        }
+        .tab-content {
+            display: none; 
+        }
+        .tab-content.active {
+            display: block; 
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🍵Moegi Matcha🍵</h1>
+
+    <div id="tab-buttons">
+    </div>
+
+    <div id="menu-container">
+    </div>
+</div>
+
+<div class="order-summary">
+    <div>
+        <div class="order-list" id="order-list">注文内容:</div>
+        Total: <span class="total-display" id="total-amount">$0.00</span>
+    </div>
+    <button class="clear-button" onclick="clearOrder()">Clear</button>
+</div>
+
+<script>
+    // 注文データとメニューデータ (★ここをすべて新しいデータに変更しました★)
+    const menu = [
+        // --- タブ①：Drinks ---
+        { category: 'Drinks', name: 'Ice Pure Matcha', price: 8.00 },
+        { category: 'Drinks', name: 'Ice Matcha Latte', price: 8.00 },
+        { category: 'Drinks', name: 'Ice Hojicha Latte', price: 8.00 },
+        { category: 'Drinks', name: 'Ice Sakura Latte', price: 8.00 },
+        // ミルクオプションは0.5ドル追加として計算
+        { category: 'Drinks', name: 'Oat milk', price: 0.50 }, 
+        { category: 'Drinks', name: 'Soy milk', price: 0.50 },
+        { category: 'Drinks', name: 'Coconut milk', price: 0.50 },
+
+        // --- タブ②：Powder and Tools ---
+        { category: 'Powder and Tools', name: 'Ceremonial grade', price: 55.00 },
+        { category: 'Powder and Tools', name: 'Latte grade', price: 36.00 },
+        { category: 'Powder and Tools', name: 'Culinary grade', price: 19.00 },
+        { category: 'Powder and Tools', name: 'Hojicha Powder', price: 38.00 },
+        { category: 'Powder and Tools', name: 'Sakura Powder', price: 37.00 },
+        { category: 'Powder and Tools', name: 'Bamboo Wisk', price: 35.00 },
+        { category: 'Powder and Tools', name: 'Ceramic Wisk', price: 35.00 },
+        { category: 'Powder and Tools', name: 'Matcha Kit Set', price: 65.00 },
+
+        // --- タブ③：Food (商品は空でカテゴリのみ登録) ---
+        // Foodタブを有効にするために、ダミーアイテムとして price: 0 で一つ登録します。
+        // 後で正式なアイテムを追加する際にこの行を削除してください。
+        { category: 'Food', name: 'To be added...', price: 0.00 }, 
+    ];
+
+    let total = 0.00;
+    let orderItems = {}; 
+
+    const totalAmountElement = document.getElementById('total-amount');
+    const menuContainer = document.getElementById('menu-container');
+    const tabButtonsContainer = document.getElementById('tab-buttons');
+    const orderListElement = document.getElementById('order-list');
+
+    // メニューをカテゴリ別にグループ化 (変更なし)
+    function groupMenuByCategory() {
+        return menu.reduce((acc, item) => {
+            if (!acc[item.category]) {
+                acc[item.category] = [];
+            }
+            acc[item.category].push(item);
+            return acc;
+        }, {});
+    }
+
+    // メニューをHTMLにレンダリングし、タブも作成する関数 (変更なし)
+    function renderMenuAndTabs() {
+        const groupedMenu = groupMenuByCategory();
+        const categories = Object.keys(groupedMenu);
+
+        let menuHtml = '';
+        let tabsHtml = '';
+
+        categories.forEach((category, index) => {
+            const isActive = index === 0 ? 'active' : ''; 
+
+            tabsHtml += `
+                <button class="tab-button ${isActive}" onclick="openTab('${category}', this)">${category}</button>
+            `;
+
+            let content = '';
+            groupedMenu[category].forEach(item => {
+                // Foodタブが空のとき、Placeholderを表示
+                if (category === 'Food' && item.name === 'To be added...') {
+                    content += `
+                        <div class="menu-item" style="justify-content: center; background-color: #fffff0; color: #aaa;">
+                            Food items will be added here soon.
+                        </div>
+                    `;
+                } else {
+                    content += `
+                        <div class="menu-item">
+                            <div class="item-info">
+                                <div class="item-name">${item.name}</div>
+                                <div class="item-price">$${item.price.toFixed(2)}</div>
+                            </div>
+                            <button class="add-button" data-name="${item.name}" data-price="${item.price}" onclick="addItem(this)">Add</button>
+                        </div>
+                    `;
+                }
+            });
+
+            menuHtml += `
+                <div id="content-${category}" class="tab-content ${isActive}">
+                    ${content}
+                </div>
+            `;
+        });
+
+        tabButtonsContainer.innerHTML = tabsHtml;
+        menuContainer.innerHTML = menuHtml;
+    }
+
+    // タブを切り替える関数 (変更なし)
+    function openTab(tabName, tabButton) {
+        const tabContents = document.querySelectorAll('.tab-content');
+        tabContents.forEach(content => {
+            content.classList.remove('active');
+        });
+
+        document.getElementById(`content-${tabName}`).classList.add('active');
+
+        const tabButtons = document.querySelectorAll('.tab-button');
+        tabButtons.forEach(button => {
+            button.classList.remove('active');
+        });
+
+        tabButton.classList.add('active');
+    }
+
+    // アイテムを追加する関数 (変更なし)
+    function addItem(button) {
+        const name = button.getAttribute('data-name');
+        const price = parseFloat(button.getAttribute('data-price'));
+        total += price;
+        // 小数点第2位まで表示を保証
+        totalAmountElement.textContent = `$${total.toFixed(2)}`; 
+        if (orderItems[name]) {
+            orderItems[name]++;
+        } else {
+            orderItems[name] = 1;
+        }
+        updateOrderList();
+    }
+
+    // 注文リストを更新する関数 (変更なし)
+    function updateOrderList() {
+        let listHtml = '注文内容: ';
+        for (const [name, count] of Object.entries(orderItems)) {
+            if (count > 0) {
+                listHtml += `**${name}** x${count}, `;
+            }
+        }
+        orderListElement.innerHTML = listHtml.replace(/, $/, ''); 
+    }
+
+    // 注文をクリアする関数 (変更なし)
+    function clearOrder() {
+        total = 0.00;
+        orderItems = {};
+        totalAmountElement.textContent = '$0.00';
+        updateOrderList();
+    }
+
+    // 初期表示
+    renderMenuAndTabs();
+</script>
+
+</body>
+</html>
